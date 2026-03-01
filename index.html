@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Red Social Curso - Filtrado</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: Arial; background:#0f0f0f; color:white; padding:15px; }
+    select, input, textarea, button { width:95%; padding:10px; margin:5px 0; border-radius:8px; border:none; font-size:16px; }
+    .post { padding:10px; margin:10px 0; border-radius:10px; text-align:left; position:relative; }
+    .deleteBtn { position:absolute; top:10px; right:10px; background:red; color:white; }
+    #app { display:none; }
+  </style>
+</head>
+<body>
+
+<h1>Red Social del Curso</h1>
+
+<div id="auth">
+  <h2>Registro / Login</h2>
+  <input type="email" id="email" placeholder="Correo">
+  <input type="password" id="password" placeholder="Contraseña"><br>
+  <button onclick="register()">Registrarse</button>
+  <button onclick="login()">Iniciar Sesión</button>
+</div>
+
+<div id="app">
+
+  <h2>Crear Post</h2>
+  <select id="postMateria">
+    <option value="">--Selecciona Materia--</option>
+    <option value="Matematicas">Matematicas</option>
+    <option value="Lenguaje">Lenguaje</option>
+    <option value="Ingles">Ingles</option>
+    <option value="Fisica">Fisica</option>
+    <option value="Biologia">Biologia</option>
+    <option value="Quimica">Quimica</option>
+    <option value="Historia">Historia</option>
+  </select>
+  <textarea id="postText" placeholder="Escribe tu resumen..."></textarea><br>
+  <button onclick="createPost()">Publicar</button>
+  <button onclick="logout()">Cerrar Sesión</button>
+
+  <h2>Filtrar por Materia</h2>
+  <select id="filterMateria" onchange="loadPosts()">
+    <option value="">Todas</option>
+    <option value="Matematicas">Matematicas</option>
+    <option value="Lenguaje">Lenguaje</option>
+    <option value="Ingles">Ingles</option>
+    <option value="Fisica">Fisica</option>
+    <option value="Biologia">Biologia</option>
+    <option value="Quimica">Quimica</option>
+    <option value="Historia">Historia</option>
+  </select>
+
+  <div id="feed"></div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs, query, orderBy, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+/* CONFIG FIREBASE */
+const firebaseConfig = {
+  apiKey: "AIzaSyB-d9qaU7TkYdAEFkcITpmVDmMT759P5Lc",
+  authDomain: "laboratorio-1-medio-3e45e.firebaseapp.com",
+  projectId: "laboratorio-1-medio-3e45e",
+  storageBucket: "laboratorio-1-medio-3e45e.firebasestorage.app",
+  messagingSenderId: "346663407053",
+  appId: "1:346663407053:web:7b48cab87a4ce7284ac884",
+  measurementId: "G-FW68CC2J24"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const authDiv = document.getElementById("auth");
+const appDiv = document.getElementById("app");
+const feedDiv = document.getElementById("feed");
+
+const ADMIN_EMAIL = "lucas.iglesias.reyes@gmail.com";
+
+const materiaColors = {
+  "Matematicas": "#3498db",
+  "Lenguaje": "#e74c3c",
+  "Ingles": "#f1c40f",
+  "Fisica": "#e67e22",
+  "Biologia": "#2ecc71",
+  "Quimica": "#1abc9c",
+  "Historia": "#9b59b6"
+};
+
+//////////////////// Registro ////////////////////
+window.register = async function() {
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+  try {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+    await addDoc(collection(db, "users"), {
+      uid: user.uid,
+      email: user.email,
+      photoURL: "https://i.imgur.com/placeholder.png",
+      displayName: "",
+      bio: ""
+    });
+    alert("Usuario creado 🔥");
+  } catch (error) { alert(error.message); }
+};
+
+//////////////////// Login ////////////////////
+window.login = async function() {
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+  try { await signInWithEmailAndPassword(auth, email, password); alert("Sesión iniciada 🚀"); }
+  catch (error) { alert(error.message); }
+};
+
+//////////////////// Logout ////////////////////
+window.logout = async function() { await signOut(auth); };
+
+//////////////////// Crear Post ////////////////////
+window.createPost = async function() {
+  const text = document.getElementById("postText").value;
+  const materia = document.getElementById("postMateria").value;
+  if (!text) return alert("Escribe algo");
+  if (!materia) return alert("Selecciona una materia");
+  try {
+    await addDoc(collection(db, "posts"), {
+      content: text,
+      materia: materia,
+      user: auth.currentUser.email,
+      uid: auth.currentUser.uid,
+      createdAt: new Date()
+    });
+    document.getElementById("postText").value = "";
+    document.getElementById("postMateria").value = "";
+    loadPosts();
+  } catch (error) { alert(error.message); }
+};
+
+//////////////////// Cargar Posts ////////////////////
+async function loadPosts() {
+  feedDiv.innerHTML = "";
+  const selectedMateria = document.getElementById("filterMateria").value;
+  let q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+  const querySnapshot = await getDocs(q);
+  querySnapshot.forEach(docSnap => {
+    const data = docSnap.data();
+    if (selectedMateria && data.materia !== selectedMateria) return; // filtrar por materia
+    const div = document.createElement("div");
+    div.className = "post";
+    div.style.background = materiaColors[data.materia] || "#1a1a1a";
+    div.innerHTML = `<b>${data.user} - ${data.materia}</b><br>${data.content}`;
+    if (auth.currentUser.email === data.user || auth.currentUser.email === ADMIN_EMAIL) {
+      const btn = document.createElement("button");
+      btn.className = "deleteBtn";
+      btn.textContent = "Eliminar";
+      btn.onclick = async () => {
+        if (confirm("¿Seguro quieres eliminar este post?")) {
+          await deleteDoc(doc(db, "posts", docSnap.id));
+          loadPosts();
+        }
+      };
+      div.appendChild(btn);
+    }
+    feedDiv.appendChild(div);
+  });
+}
+
+//////////////////// Auth listener ////////////////////
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    authDiv.style.display = "none";
+    appDiv.style.display = "block";
+    loadPosts();
+  } else {
+    authDiv.style.display = "block";
+    appDiv.style.display = "none";
+  }
+});
+</script>
+</body>
+</html>
